@@ -58,7 +58,10 @@ import kotlin.math.cos
     Card(Modifier.fillMaxWidth()){
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
             Text(z.name.ifBlank{"${z.quality.lowercase().replaceFirstChar{it.uppercase()}} route stretch"},style=MaterialTheme.typography.titleMedium)
-            Text("${z.journeys} supporting visits • ${(z.confidence*100).toInt()}% evidence score")
+            val stale=System.currentTimeMillis()-z.lastObserved>30L*86400000
+            val status=when{stale->"Stale";z.journeys>=3&&z.confidence>=.66->"Confirmed";z.journeys>=2&&z.confidence>=.66->"Possible";else->"Unconfirmed"}
+            val confidence=when{stale||z.confidence<.66->"Low";z.confidence<.85->"Medium";else->"High"}
+            Text("$status • $confidence confidence • ${z.journeys} supporting visits")
             Text("Last observed: ${DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(z.lastObserved))}",style=MaterialTheme.typography.bodySmall)
             Text("Separated by network • direction ${z.direction.toInt()}°",style=MaterialTheme.typography.bodySmall)
             Row(Modifier.horizontalScroll(rememberScrollState())){

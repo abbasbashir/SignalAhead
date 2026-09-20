@@ -1,5 +1,9 @@
 # Signal Ahead 0.3
 
+Signal Ahead learns recurring weak-signal areas from journeys you choose to track
+and can warn you when one is likely ahead. Every journey requires a Start tap;
+opening the app never starts recording, including for older saved preferences.
+
 - Bright turquoise/amber adaptive icon, blue background.
 - Route-stretch learning accepts two fresh observations across spatial cells.
 - Independent evidence: one vote per journey, at least 30 minutes between supporting visits.

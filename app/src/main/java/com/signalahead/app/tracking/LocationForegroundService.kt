@@ -145,7 +145,7 @@ class LocationForegroundService:Service(){
                 PredictionCore.approach(fix,previousFix,Fix(z.startLat,z.startLng,0,0.0,null,null),Fix(z.endLat,z.endLng,0,0.0,null,null),
                     confidence,z.lastObserved,now,if(feedback?.feedback=="Too late")180.0 else 120.0)?.let{z to it}
             }.minByOrNull{it.second.metres}
-        val next=approaching?.let{(z,a)->"${z.name.ifBlank{"Likely weak stretch"}} • ~${"%.1f".format(a.metres/1000)} km ahead"}
+        val next=approaching?.let{(z,a)->"${z.name.ifBlank{"Likely weak stretch"}} • ~${"%.1f".format(a.metres/1000)} km ahead • ${if(z.confidence>=.85)"high" else "medium"} confidence"}
         if(approaching!=null){
             val(z,a)=approaching
             if(z.id !in warned && now-z.lastWarned>6*3_600_000L){

@@ -34,7 +34,6 @@ import java.util.*
 
 class MainActivity:ComponentActivity(){
     private val app get()=application as SignalAheadApp
-    private var freshOpen=true
     private fun allowed(p:String)=ContextCompat.checkSelfPermission(this,p)==PackageManager.PERMISSION_GRANTED
     private fun locationAllowed()=allowed(Manifest.permission.ACCESS_COARSE_LOCATION)||allowed(Manifest.permission.ACCESS_FINE_LOCATION)
     private fun command(action:String){
@@ -47,7 +46,6 @@ class MainActivity:ComponentActivity(){
     }
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
-        freshOpen=savedInstanceState==null
         setContent{
             val prefs by app.settings.state.collectAsStateWithLifecycle()
             val dark=when(prefs.theme){"Dark"->true;"Light"->false;else->isSystemInDarkTheme()}
@@ -106,8 +104,6 @@ class MainActivity:ComponentActivity(){
         }
         fun start(){if(locationAllowed())command("START") else permissionInfo=true}
         LaunchedEffect(Unit){
-            if(freshOpen && p.autoStart && live.phase=="Ready" && locationAllowed())command("START")
-            freshOpen=false
             owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED){
                 while(isActive){
                     now=System.currentTimeMillis()
@@ -199,9 +195,9 @@ class MainActivity:ComponentActivity(){
                     }
                     2->{JourneyCards(journeys,alerts){id,value->scope.launch{app.database.dao().feedback(id,value)}}}
                     3->{
-                        Panel("Start your way"){
-                            Toggle("Start journey on app open","Starts recording when you open the app after granting location. Stop and Pause remain available.",p.autoStart){app.settings.save(p.copy(autoStart=it))}
-                            Text("Off by default. No boot startup or always-on passive tracking.",style=MaterialTheme.typography.bodySmall)
+                        Panel("Journeys you choose"){
+                            Text("Tap Start journey to begin recording. Opening the app shows the dashboard only.")
+                            Text("Signal Ahead learns most reliably during Live Journey Mode. Tracking may be limited by Android and your device manufacturer.",style=MaterialTheme.typography.bodySmall)
                         }
                         Panel("Battery & learning"){
                             Text("Sampling mode",fontWeight=FontWeight.SemiBold)
@@ -231,7 +227,7 @@ class MainActivity:ComponentActivity(){
                                 val days=it.substringBefore(" ").toInt();app.settings.save(p.copy(retentionDays=days))
                                 scope.launch{app.database.dao().deleteOldRaw(System.currentTimeMillis()-days*86_400_000L)}
                             }
-                            Text("Cleanup runs on app launch and during journeys. Visit summaries are kept up to 90 days; learned spots stay until deleted. Data is private to this app; no cloud upload, ads or analytics. Database content is not separately encrypted.",style=MaterialTheme.typography.bodySmall)
+                            Text("Cleanup runs on app launch and during journeys. Route votes and alert history expire after 90 days; trip summaries and learned spots stay until deleted. Data is private to this app; no cloud upload, ads or analytics. Database content is not separately encrypted.",style=MaterialTheme.typography.bodySmall)
                             Text("JSON backup restores history, route evidence and names. It contains unencrypted locations. Restoring replaces current history; settings remain unchanged.",style=MaterialTheme.typography.bodySmall)
                             OutlinedButton(onClick={backupSave.launch("signal-ahead-backup.json")},modifier=Modifier.fillMaxWidth()){Text("Save full backup")}
                             OutlinedButton(onClick={
