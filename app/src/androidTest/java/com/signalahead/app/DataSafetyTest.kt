@@ -14,7 +14,7 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class DataSafetyTest {
-    @Test fun migrateV2AndRestoreRoundTrip()=runBlocking{
+    @Test fun migrateV2AndRestoreRoundTrip()=runBlocking<Unit>{
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val name="migration-test.db"
         context.deleteDatabase(name)
