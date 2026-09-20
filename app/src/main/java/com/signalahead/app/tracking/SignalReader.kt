@@ -16,7 +16,8 @@ class SignalReader(private val context:Context) {
     fun read():SignalReading { return try {
         val tm=context.getSystemService(TelephonyManager::class.java)
         val cm=context.getSystemService(ConnectivityManager::class.java)
-        val validated=cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        val caps=cm.getNetworkCapabilities(cm.activeNetwork)
+        val validated=if(caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)==true) caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) else null
         if(ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED)
             return SignalReading(null,null,null,validated,null,null,ObservationKind.CONNECTIVITY_ONLY)
         val cell=tm.allCellInfo?.firstOrNull { it.isRegistered }
@@ -29,6 +30,8 @@ class SignalReader(private val context:Context) {
                 is android.telephony.CellInfoCdma -> cell.cellSignalStrength
                 else -> if(android.os.Build.VERSION.SDK_INT>=29) cell.cellSignalStrength else null
             } ?: return SignalReading(null,null,null,validated,null,null,ObservationKind.UNAVAILABLE)
+            val age=android.os.SystemClock.elapsedRealtimeNanos()-cell.timeStamp
+            if(age<0 || age>90_000_000_000L) return SignalReading(null,null,null,validated,cell.javaClass.simpleName,cell.timeStamp,ObservationKind.STALE_OR_LOW_CONFIDENCE)
             val dbm=s.dbm.takeIf { it in -160..-20 }
             SignalReading(dbm,s.level.coerceIn(0,4),null,validated,cell.javaClass.simpleName,cell.timeStamp,if(dbm!=null) ObservationKind.VALID_SIGNAL else ObservationKind.LEVEL_ONLY)
         }

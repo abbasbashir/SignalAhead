@@ -3,8 +3,17 @@ package com.signalahead.app.data
 import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Dao interface SignalDao {
+    @Query("SELECT * FROM WeakZone WHERE cellKey=:key") suspend fun zone(key:String):WeakZone?
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun vote(vote:PlaceVote)
+    @Query("SELECT * FROM PlaceVote WHERE cellKey=:key AND at>=:cutoff ORDER BY at DESC LIMIT 10") suspend fun votes(key:String,cutoff:Long):List<PlaceVote>
+    @Query("DELETE FROM PlaceVote") suspend fun deleteVotes()
+    @Query("DELETE FROM PlaceVote WHERE at<:cutoff") suspend fun deleteOldVotes(cutoff:Long)
+    @Query("UPDATE WeakZone SET warningSuppressed=:muted WHERE cellKey=:key") suspend fun setMuted(key:String,muted:Boolean)
+    @Query("SELECT COUNT(*) FROM Observation") fun observationCount():Flow<Int>
     @Insert suspend fun insertJourney(journey: Journey)
     @Query("UPDATE Journey SET endedAt=:endedAt WHERE id=:id") suspend fun endJourney(id: String, endedAt: Long)
     @Insert suspend fun insertObservation(observation: Observation)
@@ -23,8 +32,16 @@ import kotlinx.coroutines.flow.Flow
     @Query("DELETE FROM Journey") suspend fun deleteJourneys()
 }
 
-@Database(entities=[Journey::class,Observation::class,WeakZone::class], version=1, exportSchema=true)
+@Database(entities=[Journey::class,Observation::class,WeakZone::class,PlaceVote::class], version=2, exportSchema=true)
 abstract class AppDatabase: RoomDatabase() {
     abstract fun dao():SignalDao
-    companion object { fun create(context:Context)=Room.databaseBuilder(context,AppDatabase::class.java,"signal-ahead.db").fallbackToDestructiveMigration().build() }
+    companion object {
+        val MIGRATION_1_2=object:Migration(1,2){
+            override fun migrate(db:SupportSQLiteDatabase){
+                db.execSQL("ALTER TABLE WeakZone ADD COLUMN quality TEXT NOT NULL DEFAULT 'WEAK'")
+                db.execSQL("CREATE TABLE IF NOT EXISTS PlaceVote (cellKey TEXT NOT NULL, journeyId TEXT NOT NULL, quality TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(cellKey, journeyId))")
+            }
+        }
+        fun create(context:Context)=Room.databaseBuilder(context,AppDatabase::class.java,"signal-ahead.db").addMigrations(MIGRATION_1_2).build()
+    }
 }

@@ -40,5 +40,9 @@ enum class ZoneStatus { UNCONFIRMED, POSSIBLE, CONFIRMED, STALE }
     val status: String,
     val lastObserved: Long,
     val warningSuppressed: Boolean = false,
-    val lastWarnedAt: Long? = null
+    val lastWarnedAt: Long? = null,
+    @androidx.room.ColumnInfo(defaultValue="'WEAK'") val quality: String = "WEAK"
 )
+
+@Entity(primaryKeys = ["cellKey", "journeyId"])
+data class PlaceVote(val cellKey: String, val journeyId: String, val quality: String, val at: Long)

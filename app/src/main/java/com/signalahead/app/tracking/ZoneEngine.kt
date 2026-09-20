@@ -5,16 +5,27 @@ import com.signalahead.app.data.*
 import kotlin.math.*
 
 object ZoneEngine {
-    private const val CELL=0.0015 // roughly 165m latitude; intentionally coarse
+    private const val CELL=0.002
     fun cellKey(lat:Double,lng:Double)="${floor(lat/CELL).toLong()}:${floor(lng/CELL).toLong()}"
     suspend fun update(dao:SignalDao,o:Observation) {
-        if((o.signalLevel?:4)>1 || o.observationConfidence<0.55) return
-        val d=CELL/2
-        val journeys=dao.weakJourneyCount(o.latitude-d,o.latitude+d,o.longitude-d,o.longitude+d)
-        val count=dao.weakObservationCount(o.latitude-d,o.latitude+d,o.longitude-d,o.longitude+d)
-        val status=when { journeys>=3->ZoneStatus.CONFIRMED; journeys>=2->ZoneStatus.POSSIBLE; else->ZoneStatus.UNCONFIRMED }
-        dao.upsertZone(WeakZone(cellKey(o.latitude,o.longitude),o.latitude,o.longitude,220.0,journeys,count,(journeys/3.0).coerceAtMost(1.0),status.name,o.timestamp))
+        val quality=SamplingPolicy.category(o.signalLevel)?:return
+        if(o.observationConfidence<.6)return
+        val key=cellKey(o.latitude,o.longitude)
+        val old=dao.zone(key)
+        dao.vote(PlaceVote(key,o.journeyId,quality,o.timestamp))
+        val votes=dao.votes(key,o.timestamp-90L*86_400_000)
+        val count=votes.count{it.quality==quality}
+        dao.upsertZone(WeakZone(
+            key,(floor(o.latitude/CELL)+.5)*CELL,(floor(o.longitude/CELL)+.5)*CELL,
+            180.0,count,(old?.observations?:0)+1,
+            (count/3.0).coerceAtMost(1.0)*count/votes.size.coerceAtLeast(1),
+            SamplingPolicy.status(count),o.timestamp,old?.warningSuppressed?:false,old?.lastWarnedAt,quality
+        ))
     }
-    fun distanceAndBearing(from:Location,z:WeakZone):Pair<Float,Float>{ val out=FloatArray(2); Location.distanceBetween(from.latitude,from.longitude,z.centreLat,z.centreLng,out); return out[0] to out[1] }
+    fun distanceAndBearing(from:Location,z:WeakZone):Pair<Float,Float>{
+        val result=FloatArray(2)
+        Location.distanceBetween(from.latitude,from.longitude,z.centreLat,z.centreLng,result)
+        return result[0] to result[1]
+    }
     fun angleDelta(a:Float,b:Float)=abs(((a-b+540)%360)-180)
 }
