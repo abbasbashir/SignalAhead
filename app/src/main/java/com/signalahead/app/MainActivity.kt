@@ -89,8 +89,8 @@ class MainActivity:ComponentActivity(){
                             appendLine("timestamp,latitude,longitude,accuracy_m,signal_level,quality")
                             dao.exportObservations().forEach{appendLine("${it.timestamp},${it.latitude},${it.longitude},${it.accuracyMetres},${it.signalLevel?:""},${it.kind}")}
                         }else buildString{
-                            appendLine("latitude,longitude,signal,status,confidence,last_observed")
-                            dao.exportZones().forEach{appendLine("${it.centreLat},${it.centreLng},${it.quality},${it.status},${it.confidence},${it.lastObserved}")}
+                            appendLine("start_latitude,start_longitude,end_latitude,end_longitude,signal,confidence,journeys,last_observed")
+                            dao.allRouteSpots().forEach{appendLine("${it.startLat},${it.startLng},${it.endLat},${it.endLng},${it.quality},${it.confidence},${it.journeys},${it.lastObserved}")}
                         }
                         val stream=contentResolver.openOutputStream(uri)?:error("No output stream")
                         stream.bufferedWriter().use{it.write(csv)}

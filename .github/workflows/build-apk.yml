@@ -44,7 +44,9 @@ jobs:
         run: |
           verifier=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           "$verifier" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk > signing-info.txt
-          grep 'Signer #1 certificate SHA-256 digest:' signing-info.txt | awk '{print $NF}' > built-cert.txt
+          awk '/certificate SHA-256 digest:/ {print $NF}' signing-info.txt | sort -u > built-cert.txt
+          test "$(wc -l < built-cert.txt)" -eq 1
+          grep -Eq '^[a-f0-9]{64}$' built-cert.txt
           if [ -z "$SIGNAL_KEYSTORE" ] && [ -f DEBUG-CERT-SHA256.txt ]; then
             diff -w DEBUG-CERT-SHA256.txt built-cert.txt
           fi
