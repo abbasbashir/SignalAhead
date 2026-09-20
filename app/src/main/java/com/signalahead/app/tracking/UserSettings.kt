@@ -6,17 +6,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 data class Preferences(
     val mode:String="Balanced",
     val warnings:Boolean=true, val confirmedOnly:Boolean=true,
-    val refreshHours:Int=24, val retentionDays:Int=30, val theme:String="System"
+    val refreshHours:Int=24, val retentionDays:Int=30, val theme:String="System",
+    val autoStart:Boolean=false
 )
 class UserSettings(context:Context){
     private val prefs=context.getSharedPreferences("preferences",Context.MODE_PRIVATE)
     val state=MutableStateFlow(Preferences(
         prefs.getString("mode","Balanced")!!,
         prefs.getBoolean("warnings",true),prefs.getBoolean("confirmed",true),
-        prefs.getInt("refresh",24),prefs.getInt("retention",30),prefs.getString("theme","System")!!
+        prefs.getInt("refresh",24),prefs.getInt("retention",30),prefs.getString("theme","System")!!,
+        prefs.getBoolean("auto",false)
     ))
     fun save(p:Preferences){
-        prefs.edit().remove("auto").putString("mode",p.mode)
+        prefs.edit().putBoolean("auto",p.autoStart).putString("mode",p.mode)
             .putBoolean("warnings",p.warnings).putBoolean("confirmed",p.confirmedOnly)
             .putInt("refresh",p.refreshHours).putInt("retention",p.retentionDays)
             .putString("theme",p.theme).apply()

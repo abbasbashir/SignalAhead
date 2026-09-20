@@ -17,5 +17,6 @@ class SmokeTest {
         ui.onNodeWithText("Journey journal").assertIsDisplayed()
         ui.onNodeWithText("Settings").performClick()
         ui.onNodeWithText("Journeys you choose").assertIsDisplayed()
+        ui.onNodeWithText("Start journey on app open").assertIsDisplayed()
     }
 }

@@ -34,6 +34,7 @@ import java.util.*
 
 class MainActivity:ComponentActivity(){
     private val app get()=application as SignalAheadApp
+    private var pendingAppOpen=false
     private fun allowed(p:String)=ContextCompat.checkSelfPermission(this,p)==PackageManager.PERMISSION_GRANTED
     private fun locationAllowed()=allowed(Manifest.permission.ACCESS_COARSE_LOCATION)||allowed(Manifest.permission.ACCESS_FINE_LOCATION)
     private fun command(action:String){
@@ -46,12 +47,26 @@ class MainActivity:ComponentActivity(){
     }
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
+        pendingAppOpen=savedInstanceState==null
         setContent{
             val prefs by app.settings.state.collectAsStateWithLifecycle()
             val dark=when(prefs.theme){"Dark"->true;"Light"->false;else->isSystemInDarkTheme()}
             MaterialTheme(colorScheme=if(dark)darkColorScheme(primary=Color(0xFF68DEC2),background=Color(0xFF0C1522),surface=Color(0xFF142232)) else lightColorScheme(primary=Color(0xFF087F70),background=Color(0xFFF2F6F8),surface=Color.White)){
                 App(prefs)
             }
+        }
+    }
+    override fun onNewIntent(intent:Intent){
+        super.onNewIntent(intent)
+        if(intent.action==Intent.ACTION_MAIN&&intent.hasCategory(Intent.CATEGORY_LAUNCHER))pendingAppOpen=true
+    }
+    override fun onPostResume(){
+        super.onPostResume()
+        if(!pendingAppOpen)return
+        pendingAppOpen=false
+        if(app.settings.state.value.autoStart&&Live.state.value.phase=="Ready"){
+            if(locationAllowed())command("START")
+            else Live.state.value=Live.state.value.copy(error="Auto-start needs location permission. Tap Start journey to allow it.")
         }
     }
     @Composable private fun App(p:Preferences){
@@ -141,7 +156,7 @@ class MainActivity:ComponentActivity(){
                                 Row(horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.Bottom,modifier=Modifier.height(56.dp)){
                                     repeat(5){i->Box(Modifier.width(22.dp).height((16+i*10).dp).background(if(level!=null&&i<=level)Color(0xFF79E0C3) else Color.White.copy(alpha=.15f),RoundedCornerShape(5.dp)))}
                                 }
-                                Text(if(live.phase=="Live")live.policy else "Opens automatically • no journey recording until you start",color=Color(0xFFD0DFE6))
+                                Text(if(live.phase=="Live")live.policy else if(p.autoStart)"Auto-start enabled • Pause and Stop stay in your control" else "Opens automatically • tap Start to record a journey",color=Color(0xFFD0DFE6))
                                 Text(if(live.phase=="Live")"Last observation: ${ago(live.sampledAt,now)}" else "Dashboard refreshes while this screen is open",color=Color(0xFF9CB6C4),style=MaterialTheme.typography.bodySmall)
                             }
                         }
@@ -196,7 +211,8 @@ class MainActivity:ComponentActivity(){
                     2->{JourneyCards(journeys,alerts){id,value->scope.launch{app.database.dao().feedback(id,value)}}}
                     3->{
                         Panel("Journeys you choose"){
-                            Text("Tap Start journey to begin recording. Opening the app shows the dashboard only.")
+                            Toggle("Start journey on app open","When enabled, opening the app starts location and signal recording after location permission is granted. A visible notification includes Pause and Stop. Off by default.",p.autoStart){app.settings.save(p.copy(autoStart=it))}
+                            Text("Applies on your next app launch. Paused journeys stay paused. Returning from permissions or a file picker does not restart recording.",style=MaterialTheme.typography.bodySmall)
                             Text("Signal Ahead learns most reliably during Live Journey Mode. Tracking may be limited by Android and your device manufacturer.",style=MaterialTheme.typography.bodySmall)
                         }
                         Panel("Battery & learning"){
@@ -242,7 +258,7 @@ class MainActivity:ComponentActivity(){
                             Text("No contacts, microphone, calls or background-location permission.")
                             TextButton(onClick={startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))}){Text("Open Android app settings")}
                             Text("Warnings are estimates and may arrive late or be missed. Battery savings depend on the device and journey; no percentage saving is promised.",style=MaterialTheme.typography.bodySmall)
-                            Text("Signal Ahead 0.3 • Abbas Bashir",style=MaterialTheme.typography.labelMedium)
+                            Text("Signal Ahead 0.3.1 • Abbas Bashir",style=MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
