@@ -25,8 +25,8 @@ jobs:
       - name: Reuse testing signing key
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: signal-ahead-debug-signing-v1
+          path: ~/.signalahead/testing.jks
+          key: signal-ahead-debug-signing-v2
       - name: Load configured durable signing key
         env:
           KEY_DATA: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -34,9 +34,16 @@ jobs:
           if [ -n "$KEY_DATA" ]; then
             printf '%s' "$KEY_DATA" | base64 --decode > "$RUNNER_TEMP/signal-signing.jks"
             echo "SIGNAL_KEYSTORE=$RUNNER_TEMP/signal-signing.jks" >> "$GITHUB_ENV"
-          elif [ -f DEBUG-CERT-SHA256.txt ] && [ ! -f "$HOME/.android/debug.keystore" ]; then
+          elif [ -f DEBUG-CERT-SHA256.txt ] && [ ! -f "$HOME/.signalahead/testing.jks" ]; then
             echo "Pinned testing key is missing. Configure durable signing secrets; do not silently rotate it."
             exit 1
+          fi
+          if [ -z "$KEY_DATA" ]; then
+            mkdir -p "$HOME/.signalahead"
+            if [ ! -f "$HOME/.signalahead/testing.jks" ]; then
+              keytool -genkeypair -keystore "$HOME/.signalahead/testing.jks" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            echo "SIGNAL_DEBUG_KEYSTORE=$HOME/.signalahead/testing.jks" >> "$GITHUB_ENV"
           fi
       - name: Test and build
         run: gradle --no-daemon testDebugUnitTest assembleDebug assembleDebugAndroidTest

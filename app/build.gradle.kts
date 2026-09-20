@@ -19,6 +19,7 @@ android {
     buildFeatures { compose = true; buildConfig = true }
     signingConfigs {
         getByName("debug") {
+            System.getenv("SIGNAL_DEBUG_KEYSTORE")?.let { storeFile=file(it) }
             val stableFile=System.getenv("SIGNAL_KEYSTORE")
             if(!stableFile.isNullOrBlank()){
                 storeFile=file(stableFile)
