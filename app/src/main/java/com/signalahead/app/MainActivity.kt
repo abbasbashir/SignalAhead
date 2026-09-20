@@ -26,7 +26,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.*
 import androidx.lifecycle.compose.*
 import androidx.room.withTransaction
-import com.signalahead.app.data.WeakZone
+import com.signalahead.app.data.*
 import com.signalahead.app.tracking.*
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
@@ -59,12 +59,16 @@ class MainActivity:ComponentActivity(){
     @Composable private fun App(p:Preferences){
         val live by Live.state.collectAsStateWithLifecycle()
         val zones by app.database.dao().observeZones().collectAsStateWithLifecycle(emptyList())
+        val routes by app.database.dao().routeSpots().collectAsStateWithLifecycle(emptyList())
+        val journeys by app.database.dao().summaries().collectAsStateWithLifecycle(emptyList())
+        val alerts by app.database.dao().alerts().collectAsStateWithLifecycle(emptyList())
         val count by app.database.dao().observationCount().collectAsStateWithLifecycle(0)
         var tab by remember{mutableIntStateOf(0)}
         var permissionInfo by remember{mutableStateOf(false)}
         var deleteDialog by remember{mutableStateOf(false)}
         var exportDialog by remember{mutableStateOf(false)}
         var rawExport by remember{mutableStateOf(false)}
+        var pendingBackup by remember{mutableStateOf<Backup?>(null)}
         var message by remember{mutableStateOf<String?>(null)}
         var now by remember{mutableLongStateOf(System.currentTimeMillis())}
         var preview by remember{mutableStateOf<SignalReading?>(null)}
@@ -94,6 +98,12 @@ class MainActivity:ComponentActivity(){
                 }.getOrElse{"Export failed. Please try a different destination."}
             }
         }
+        val backupSave=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
+            if(uri!=null)scope.launch{message=runCatching{BackupManager.save(this@MainActivity,app.database,uri);"Backup saved. Keep it private: it contains location history."}.getOrElse{"Backup failed: ${it.message}"}}
+        }
+        val backupRead=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+            if(uri!=null)scope.launch{runCatching{BackupManager.read(this@MainActivity,uri)}.onSuccess{pendingBackup=it}.onFailure{message="Backup rejected: ${it.message}"}}
+        }
         fun start(){if(locationAllowed())command("START") else permissionInfo=true}
         LaunchedEffect(Unit){
             if(freshOpen && p.autoStart && live.phase=="Ready" && locationAllowed())command("START")
@@ -109,7 +119,7 @@ class MainActivity:ComponentActivity(){
         Scaffold(
             containerColor=MaterialTheme.colorScheme.background,
             bottomBar={NavigationBar{
-                listOf("Today" to Icons.Default.Dashboard,"Spots" to Icons.Default.Place,"Settings" to Icons.Default.Tune).forEachIndexed{i,item->
+                listOf("Today" to Icons.Default.Dashboard,"Spots" to Icons.Default.Place,"Trips" to Icons.Default.History,"Settings" to Icons.Default.Tune).forEachIndexed{i,item->
                     NavigationBarItem(selected=tab==i,onClick={tab=i},icon={Icon(item.second,null)},label={Text(item.first)})
                 }
             }}
@@ -118,7 +128,7 @@ class MainActivity:ComponentActivity(){
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("SIGNAL AHEAD",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
-                        Text(listOf("Your daily signal companion","Your learned places","Make it yours")[tab],style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
+                        Text(listOf("Your daily signal companion","Your learned places","Journey journal","Make it yours")[tab],style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
                     }
                     Icon(Icons.Default.Sensors,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(32.dp))
                 }
@@ -140,8 +150,8 @@ class MainActivity:ComponentActivity(){
                             }
                         }
                         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                            Metric("Weak spots",zones.count{it.quality=="WEAK"&&it.status=="CONFIRMED"}.toString(),Modifier.weight(1f))
-                            Metric("Strong spots",zones.count{it.quality=="STRONG"&&it.status=="CONFIRMED"}.toString(),Modifier.weight(1f))
+                            Metric("Weak spots",routes.count{it.quality=="WEAK"&&it.journeys>=3&&it.confidence>=.66}.toString(),Modifier.weight(1f))
+                            Metric("Strong spots",routes.count{it.quality=="STRONG"&&it.journeys>=3&&it.confidence>=.66}.toString(),Modifier.weight(1f))
                             Metric("Saved samples",count.toString(),Modifier.weight(1f))
                         }
                         Panel("Journey controls"){
@@ -164,16 +174,19 @@ class MainActivity:ComponentActivity(){
                             if(!p.warnings)Text("Notification alerts are off.",style=MaterialTheme.typography.bodySmall)
                         }
                         Panel("Less checking. More confidence."){
-                            Text("Confirmed spots reuse saved results for ${p.refreshHours} hours. They are rechecked when you visit after that window. Quiet warnings are limited to once per journey and at least six hours apart.")
+                            Text("Strong spots reuse saved results for ${p.refreshHours} hours. Weak stretches are checked during visits to verify warnings. Quiet notifications are limited to once per stretch per journey and at least six hours apart.")
                             Text("Strong signal describes radio reception, not guaranteed internet access.",style=MaterialTheme.typography.bodySmall)
                         }
                     }
                     1->{
                         Text("Your observations only • not a carrier coverage map",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        if(zones.isEmpty())Panel("Every journey teaches the app"){
-                            Text("Two fresh readings support one visit. Repeat visits build confidence: possible after two journeys, confirmed after three.")
+                        RouteMap(routes)
+                        routes.forEach{z->RouteSpotCard(z,{name->scope.launch{app.database.dao().nameSpot(z.id,name)}},{scope.launch{app.database.dao().muteSpot(z.id,!z.muted)}})}
+                        if(routes.isEmpty())Panel("Every journey teaches the app"){
+                            Text("Two fresh readings along a route stretch support a visit. Repeated journeys at least 30 minutes apart build confidence. Three supporting visits and consistent evidence are needed for confirmed warnings.")
                         }
-                        zones.forEach{z->
+                        if(zones.isNotEmpty())Text("Legacy spots • network unknown • excluded from predictions")
+                        zones.take(30).forEach{z->
                             Panel(if(z.quality=="STRONG")"Strong-signal spot" else "Weak-signal spot"){
                                 Text("${z.status.lowercase().replaceFirstChar{it.uppercase()}} • ${z.distinctJourneys} journeys",fontWeight=FontWeight.SemiBold)
                                 LinearProgressIndicator(progress={z.confidence.toFloat()},modifier=Modifier.fillMaxWidth())
@@ -184,7 +197,8 @@ class MainActivity:ComponentActivity(){
                             }
                         }
                     }
-                    2->{
+                    2->{JourneyCards(journeys,alerts){id,value->scope.launch{app.database.dao().feedback(id,value)}}}
+                    3->{
                         Panel("Start your way"){
                             Toggle("Start journey on app open","Starts recording when you open the app after granting location. Stop and Pause remain available.",p.autoStart){app.settings.save(p.copy(autoStart=it))}
                             Text("Off by default. No boot startup or always-on passive tracking.",style=MaterialTheme.typography.bodySmall)
@@ -193,7 +207,7 @@ class MainActivity:ComponentActivity(){
                             Text("Sampling mode",fontWeight=FontWeight.SemiBold)
                             Choices(listOf("Eco","Balanced","Responsive"),p.mode){app.settings.save(p.copy(mode=it))}
                             Text("Eco checks less often. Responsive checks more often and can use more battery. All modes slow down when stationary or below 20% battery.",style=MaterialTheme.typography.bodySmall)
-                            Text("Recheck confirmed spots",fontWeight=FontWeight.SemiBold)
+                            Text("Recheck confirmed strong spots",fontWeight=FontWeight.SemiBold)
                             Choices(listOf("6 hours","24 hours","72 hours"),"${p.refreshHours} hours"){app.settings.save(p.copy(refreshHours=it.substringBefore(" ").toInt()))}
                             Text("Checks happen on later visits, not on a background timer. Location checks continue during journeys to detect approach.",style=MaterialTheme.typography.bodySmall)
                         }
@@ -218,6 +232,12 @@ class MainActivity:ComponentActivity(){
                                 scope.launch{app.database.dao().deleteOldRaw(System.currentTimeMillis()-days*86_400_000L)}
                             }
                             Text("Cleanup runs on app launch and during journeys. Visit summaries are kept up to 90 days; learned spots stay until deleted. Data is private to this app; no cloud upload, ads or analytics. Database content is not separately encrypted.",style=MaterialTheme.typography.bodySmall)
+                            Text("JSON backup restores history, route evidence and names. It contains unencrypted locations. Restoring replaces current history; settings remain unchanged.",style=MaterialTheme.typography.bodySmall)
+                            OutlinedButton(onClick={backupSave.launch("signal-ahead-backup.json")},modifier=Modifier.fillMaxWidth()){Text("Save full backup")}
+                            OutlinedButton(onClick={
+                                if(live.phase!="Ready")message="Stop the journey before restoring."
+                                else backupRead.launch(arrayOf("application/json","text/plain","application/octet-stream"))
+                            },modifier=Modifier.fillMaxWidth()){Text("Restore full backup")}
                             OutlinedButton(onClick={exportDialog=true},modifier=Modifier.fillMaxWidth()){Text("Export selected data")}
                             TextButton(onClick={deleteDialog=true}){Text("Delete all history",color=MaterialTheme.colorScheme.error)}
                         }
@@ -226,12 +246,22 @@ class MainActivity:ComponentActivity(){
                             Text("No contacts, microphone, calls or background-location permission.")
                             TextButton(onClick={startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))}){Text("Open Android app settings")}
                             Text("Warnings are estimates and may arrive late or be missed. Battery savings depend on the device and journey; no percentage saving is promised.",style=MaterialTheme.typography.bodySmall)
-                            Text("Signal Ahead 0.2 • Abbas Bashir",style=MaterialTheme.typography.labelMedium)
+                            Text("Signal Ahead 0.3 • Abbas Bashir",style=MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
             }
         }
+        if(pendingBackup!=null)AlertDialog(onDismissRequest={pendingBackup=null},title={Text("Replace current history?")},
+            text={Text("Restore ${pendingBackup!!.observations.size} observations and ${pendingBackup!!.spots.size} route stretches. Current history will be replaced. New-device or changed-SIM observations may need relearning.")},
+            confirmButton={TextButton(onClick={
+                val b=pendingBackup!!;pendingBackup=null
+                scope.launch{
+                    if(Live.state.value.phase!="Ready")message="Stop the journey first."
+                    else message=runCatching{BackupManager.restore(this@MainActivity,app.database,b);"History restored."}.getOrElse{"Restore failed; transaction rolled back: ${it.message}"}
+                }
+            }){Text("Replace & restore")}},
+            dismissButton={TextButton(onClick={pendingBackup=null}){Text("Cancel")}})
         if(permissionInfo)AlertDialog(onDismissRequest={permissionInfo=false},title={Text("Learn only when you travel")},text={Text("A journey records location and available signal readings on this phone. A visible notification stays active. You can pause, stop, export or delete your data. Approximate location works with reduced precision.")},
             confirmButton={TextButton(onClick={permissionInfo=false;locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION))}){Text("Continue")}},
             dismissButton={TextButton(onClick={permissionInfo=false}){Text("Not now")}})
@@ -239,7 +269,7 @@ class MainActivity:ComponentActivity(){
             confirmButton={TextButton(onClick={
                 deleteDialog=false
                 if(live.phase!="Ready")command("DELETE") else scope.launch{
-                    app.database.withTransaction {val d=app.database.dao();d.deleteObservations();d.deleteVotes();d.deleteZones();d.deleteJourneys()}
+                    app.database.withTransaction {BackupManager.clear(app.database.dao())}
                 }
             }){Text("Delete")}},dismissButton={TextButton(onClick={deleteDialog=false}){Text("Cancel")}})
         if(exportDialog)AlertDialog(onDismissRequest={exportDialog=false},title={Text("Export location data")},text={Column{
