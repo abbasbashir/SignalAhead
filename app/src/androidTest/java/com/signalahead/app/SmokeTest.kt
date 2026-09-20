@@ -16,6 +16,6 @@ class SmokeTest {
         ui.onNodeWithText("Trips").performClick()
         ui.onNodeWithText("Journey journal").assertIsDisplayed()
         ui.onNodeWithText("Settings").performClick()
-        ui.onNodeWithText("Start your way").assertIsDisplayed()
+        ui.onNodeWithText("Journeys you choose").assertIsDisplayed()
     }
 }
