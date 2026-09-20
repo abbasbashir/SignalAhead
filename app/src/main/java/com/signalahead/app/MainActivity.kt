@@ -47,4 +47,4 @@ Scaffold(bottomBar={NavigationBar{listOf("Journey" to Icons.Default.Navigation,"
   d.exportZones().forEach{appendLine("zone,${it.lastObserved},${it.centreLat},${it.centreLng},${it.radiusMetres},,,${it.status},${it.confidence}")}}}
 }
 
-@Composable fun SignalTheme(content:@Composable()->Unit){MaterialTheme(colorScheme=if(androidx.compose.foundation.isSystemInDarkTheme()) darkColorScheme(primary=Color(0xFF60A5FA)) else lightColorScheme(primary=Color(0xFF2563EB)),content=content)}
+@Composable fun SignalTheme(content: @Composable () -> Unit){MaterialTheme(colorScheme=if(androidx.compose.foundation.isSystemInDarkTheme()) darkColorScheme(primary=Color(0xFF60A5FA)) else lightColorScheme(primary=Color(0xFF2563EB)),content=content)}
